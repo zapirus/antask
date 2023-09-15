@@ -64,15 +64,26 @@ func (h *Handler) MonitoringChangeHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.wg.Add(1)
+	poolSize := 10
+	pool := make(chan struct{}, poolSize)
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < poolSize; i++ {
+		pool <- struct{}{}
+	}
+
+	wg.Add(1)
 	go func() {
-		defer h.wg.Done()
-		if err = h.service.Take(now, auths, headersJSON, bodyJSON); err != nil {
+		defer wg.Done()
+		<-pool
+		if err := h.service.Take(now, auths, headersJSON, bodyJSON); err != nil {
 			logrus.Error(err)
 			return
 		}
+		pool <- struct{}{}
 	}()
-	h.wg.Wait()
+
+	wg.Wait()
 
 	jsonResp, err := json.Marshal(resp)
 	if err != nil {
@@ -81,5 +92,4 @@ func (h *Handler) MonitoringChangeHandler(w http.ResponseWriter, r *http.Request
 	}
 	w.Write(jsonResp)
 	return
-
 }
